@@ -1,0 +1,88 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Install dependencies
+        run: poetry install --with dev --no-interaction
+      - name: Run lint
+        run: poetry run ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: lacrei_saude
+          POSTGRES_USER: lacrei
+          POSTGRES_PASSWORD: lacrei123
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lacrei -d lacrei_saude"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      USE_SQLITE: "False"
+      POSTGRES_DB: lacrei_saude
+      POSTGRES_USER: lacrei
+      POSTGRES_PASSWORD: lacrei123
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      SECRET_KEY: test-secret-key
+      API_KEY: lacrei-dev-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Install dependencies
+        run: poetry install --with dev --no-interaction
+      - name: Run tests
+        run: poetry run python manage.py test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t lacrei-saude:${{ github.sha }} .
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Staging (placeholder)
+        run: echo "Deploy para staging via AWS ECS/EC2 ou Render"
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Production (placeholder)
+        run: echo "Deploy para produção via AWS ECS/EC2 ou EB"

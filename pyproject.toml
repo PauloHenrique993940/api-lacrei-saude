@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "lacrei-saude"
+version = "0.1.0"
+description = "API RESTful de gerenciamento de consultas médicas"
+authors = ["Lacrei <dev@lacreisaude.com.br>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.12,<4.0"
+Django = "^5.1.0"
+djangorestframework = "^3.4.0"
+django-cors-headers = "^4.7.0"
+psycopg2-binary = "^2.9.9"
+whitenoise = "^6.0.6"
+drf-spectacular = "^0.28.0"
+python-dotenv = "^1.0.1"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.7.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
