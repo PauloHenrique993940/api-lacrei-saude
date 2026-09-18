@@ -1,6 +1,8 @@
 services:
   db:
     image: postgres:16-alpine
+    env_file:
+      - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
@@ -18,6 +20,8 @@ services:
   web:
     build: .
     image: ${IMAGE_REPOSITORY:-lacrei-saude}:${IMAGE_TAG:-local}
+    env_file:
+      - .env
     command: sh -c "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers $${GUNICORN_WORKERS:-3} --access-logfile - --error-logfile -"
     environment:
       DEBUG: ${DEBUG:?DEBUG is required}

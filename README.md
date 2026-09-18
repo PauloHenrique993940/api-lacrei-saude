@@ -159,6 +159,10 @@ Aplicação disponível em:
 - API: `http://localhost:8000`
 - PostgreSQL: `localhost:5432`
 
+Imagem publicada no GHCR:
+
+- `sha256:a198a6d6a6c17418c3e79a593d706fda34b6c771a9ad524505b4d7524cbb074d`
+
 O `docker-compose.yml` inicia a API e o PostgreSQL. A imagem executa as migrações antes de iniciar o servidor.
 
 ## Variáveis de ambiente
