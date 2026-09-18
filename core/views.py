@@ -2,6 +2,7 @@ from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import render
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from .models import Appointment, Professional
@@ -54,7 +55,11 @@ class AppointmentByProfessionalView(generics.ListAPIView):
         queryset = Appointment.objects.filter(profissional_id=self.kwargs.get("professional_id")).select_related("profissional")
         date = self.request.query_params.get("data")
         if date:
-            queryset = queryset.filter(data__date=date)
+            try:
+                queryset = queryset.filter(data__date=date)
+                queryset.query.sql_with_params()
+            except (ValidationError, ValueError):
+                raise ValidationError({"data": "Use uma data no formato AAAA-MM-DD."})
         return queryset
 
     def list(self, request, *args, **kwargs):

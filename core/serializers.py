@@ -26,7 +26,7 @@ class ProfessionalSerializer(serializers.ModelSerializer):
     def validate_contato(self, value):
         value = value.strip()
         phone = re.sub(r"\D", "", value)
-        if phone and len(phone) in {10, 11}:
+        if re.fullmatch(r"(?:\+?55)?\d{10,11}", phone):
             return value
         try:
             EmailValidator()(value)
@@ -70,7 +70,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
     def validate_data(self, value):
         if value is None:
             raise serializers.ValidationError("A data da consulta é obrigatória.")
-        if value < serializers.DateTimeField().to_internal_value("2000-01-01T00:00:00Z"):
+        if value.year < 2000:
             raise serializers.ValidationError("Informe uma data válida.")
         return value
 

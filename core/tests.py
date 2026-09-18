@@ -57,6 +57,19 @@ class ProfessionalAPITest(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_professional_invalid_contact(self):
+        response = self.client.post(
+            reverse("professional-list-create"),
+            {
+                "nome_social": "Dr. Inválido",
+                "profissao": "Clínico",
+                "endereco": "Rua A, 10",
+                "contato": "123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_retrieve_professional_and_request_id(self):
         response = self.client.get(reverse("professional-detail", args=[self.professional.id]), HTTP_X_REQUEST_ID="test-request")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -148,6 +161,25 @@ class AppointmentAPITest(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.json()), 1)
+
+    def test_invalid_date_filter_returns_bad_request(self):
+        response = self.client.get(
+            reverse("appointment-by-professional", args=[self.professional.id]),
+            {"data": "not-a-date"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_appointment_unknown_field_is_rejected(self):
+        response = self.client.post(
+            reverse("appointment-list-create"),
+            {
+                "data": "2026-10-16T09:30:00Z",
+                "profissional": self.professional.id,
+                "unexpected": "value",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_professional_delete_protects_appointment_history(self):
         with self.assertRaises(ProtectedError):

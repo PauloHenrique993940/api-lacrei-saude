@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 from dotenv import load_dotenv
 
@@ -75,11 +76,32 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+database_url = os.getenv("DATABASE_URL", "").strip()
 use_sqlite = os.getenv("USE_SQLITE", "False").lower() == "true"
 if ENVIRONMENT in {"staging", "production"} and use_sqlite:
     raise RuntimeError("USE_SQLITE deve ser False em staging e produção.")
 
-if use_sqlite:
+if database_url:
+    parsed_database_url = urlparse(database_url)
+    if parsed_database_url.scheme not in {"postgres", "postgresql"}:
+        raise RuntimeError("DATABASE_URL deve usar o esquema postgres ou postgresql.")
+    database_options = parse_qs(parsed_database_url.query)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": unquote(parsed_database_url.path.lstrip("/")),
+            "USER": unquote(parsed_database_url.username or ""),
+            "PASSWORD": unquote(parsed_database_url.password or ""),
+            "HOST": parsed_database_url.hostname,
+            "PORT": parsed_database_url.port or "5432",
+            "OPTIONS": {
+                key: values[-1]
+                for key, values in database_options.items()
+                if key in {"sslmode", "connect_timeout"}
+            },
+        }
+    }
+elif use_sqlite:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
