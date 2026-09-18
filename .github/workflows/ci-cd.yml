@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      rollback_tag:
+        description: "Tag imutável para rollback em produção (deixe vazio para release normal)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   lint:
@@ -14,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Install Poetry
         run: pip install poetry
       - name: Install dependencies
@@ -31,7 +40,7 @@ jobs:
         env:
           POSTGRES_DB: lacrei_saude
           POSTGRES_USER: lacrei
-          POSTGRES_PASSWORD: lacrei123
+          POSTGRES_PASSWORD: ci-postgres-password
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U lacrei -d lacrei_saude"
@@ -39,33 +48,55 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      ENVIRONMENT: test
+      DEBUG: "False"
       USE_SQLITE: "False"
       POSTGRES_DB: lacrei_saude
       POSTGRES_USER: lacrei
-      POSTGRES_PASSWORD: lacrei123
+      POSTGRES_PASSWORD: ci-postgres-password
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
-      SECRET_KEY: test-secret-key
-      API_KEY: lacrei-dev-key
+      SECRET_KEY: ci-test-secret-key
+      API_KEY: ci-test-api-key
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Install Poetry
         run: pip install poetry
       - name: Install dependencies
         run: poetry install --with dev --no-interaction
-      - name: Run tests
-        run: poetry run python manage.py test
+      - name: Run tests with coverage
+        run: |
+          poetry run coverage run manage.py test
+          poetry run coverage report
+          poetry run coverage xml
+      - name: Publish coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
 
   build:
     runs-on: ubuntu-latest
     needs: test
     steps:
       - uses: actions/checkout@v4
-      - name: Build Docker image
-        run: docker build -t lacrei-saude:${{ github.sha }} .
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish immutable image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
 
   deploy-staging:
     runs-on: ubuntu-latest
@@ -73,9 +104,31 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     environment: staging
     steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Staging (placeholder)
-        run: echo "Deploy para staging via AWS ECS/EC2 ou Render"
+      - name: Deploy image to staging
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+          HEALTH_URL: ${{ secrets.STAGING_URL }}/health/
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: IMAGE,DEPLOY_PATH,HEALTH_URL,REGISTRY_USER,REGISTRY_TOKEN
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+            export IMAGE_REPOSITORY="${IMAGE%:*}" IMAGE_TAG="${IMAGE##*:}"
+            docker compose pull web
+            docker compose up -d --no-build web
+            curl --fail --retry 12 --retry-delay 5 "$HEALTH_URL"
+      - name: Record staging health check
+        run: |
+          echo "Staging URL: ${{ secrets.STAGING_URL }}" >> "$GITHUB_STEP_SUMMARY"
+          curl --fail --retry 3 "${{ secrets.STAGING_URL }}/health/" >> "$GITHUB_STEP_SUMMARY"
 
   deploy-production:
     runs-on: ubuntu-latest
@@ -83,6 +136,59 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     environment: production
     steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Production (placeholder)
-        run: echo "Deploy para produção via AWS ECS/EC2 ou EB"
+      - name: Deploy image to production
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          DEPLOY_PATH: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+          HEALTH_URL: ${{ secrets.PRODUCTION_URL }}/health/
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          envs: IMAGE,DEPLOY_PATH,HEALTH_URL,REGISTRY_USER,REGISTRY_TOKEN
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+            export IMAGE_REPOSITORY="${IMAGE%:*}" IMAGE_TAG="${IMAGE##*:}"
+            docker compose pull web
+            docker compose up -d --no-build web
+            curl --fail --retry 12 --retry-delay 5 "$HEALTH_URL"
+      - name: Record production health check
+        run: |
+          echo "Production URL: ${{ secrets.PRODUCTION_URL }}" >> "$GITHUB_STEP_SUMMARY"
+          curl --fail --retry 3 "${{ secrets.PRODUCTION_URL }}/health/" >> "$GITHUB_STEP_SUMMARY"
+
+  rollback-production:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_tag != ''
+    environment: production
+    steps:
+      - name: Roll back production to immutable image
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ inputs.rollback_tag }}
+          DEPLOY_PATH: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+          HEALTH_URL: ${{ secrets.PRODUCTION_URL }}/health/
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          envs: IMAGE,DEPLOY_PATH,HEALTH_URL,REGISTRY_USER,REGISTRY_TOKEN
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+            export IMAGE_REPOSITORY="${IMAGE%:*}" IMAGE_TAG="${IMAGE##*:}"
+            docker compose pull web
+            docker compose up -d --no-build web
+            curl --fail --retry 12 --retry-delay 5 "$HEALTH_URL"
+      - name: Record rollback evidence
+        run: |
+          echo "Rollback tag: ${{ inputs.rollback_tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Production URL: ${{ secrets.PRODUCTION_URL }}" >> "$GITHUB_STEP_SUMMARY"

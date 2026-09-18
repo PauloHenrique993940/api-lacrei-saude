@@ -47,13 +47,13 @@ Após confirmar a recuperação, remova a unidade que apresentou problema:
 docker compose down
 ```
 
-Em AWS ECS, o mesmo fluxo deve ser aplicado criando uma nova task definition para cada tag, deslocando o tráfego pelo target group e restaurando a task definition anterior no rollback.
+No GitHub Actions, execute **Run workflow**, preencha `rollback_tag` com a tag SHA anterior e selecione o ambiente `production`. O job `rollback-production` baixa exatamente essa imagem, reinicia o serviço e só conclui após o health check.
 
 ## Revert no GitHub Actions
 
 O workflow aceita execução manual pelo GitHub Actions. Para um revert de código, crie um commit que reverta a release problemática e faça push para `main`. O pipeline executará lint, testes e build novamente antes da promoção.
 
-Para um rollback de infraestrutura sem alterar o código, use a tag anterior da imagem e execute o procedimento acima. As etapas de deploy do workflow ainda dependem das credenciais e do provedor escolhidos para o ambiente.
+Para um rollback de infraestrutura sem alterar o código, use a tag anterior da imagem e execute o job manual. O workflow registra a tag revertida, a URL de produção e a resposta do endpoint `/health/` no resumo da execução. O teste real depende da configuração dos secrets e fica registrado no histórico do workflow.
 
 ## Critérios de sucesso
 

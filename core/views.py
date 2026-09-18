@@ -1,3 +1,5 @@
+from django.db import connection
+from django.http import JsonResponse
 from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -10,9 +12,24 @@ def home(request):
     return render(request, "home.html")
 
 
+def health(request):
+    connection.ensure_connection()
+    return JsonResponse({"status": "ok", "database": "ok"})
+
+
 class ProfessionalListCreateView(generics.ListCreateAPIView):
     queryset = Professional.objects.all()
     serializer_class = ProfessionalSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        profession = self.request.query_params.get("profissao")
+        search = self.request.query_params.get("q")
+        if profession:
+            queryset = queryset.filter(profissao__iexact=profession.strip())
+        if search:
+            queryset = queryset.filter(nome_social__icontains=search.strip())
+        return queryset
 
 
 class ProfessionalDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -34,8 +51,11 @@ class AppointmentByProfessionalView(generics.ListAPIView):
     serializer_class = AppointmentSerializer
 
     def get_queryset(self):
-        professional_id = self.kwargs.get("professional_id")
-        return Appointment.objects.filter(profissional_id=professional_id).select_related("profissional")
+        queryset = Appointment.objects.filter(profissional_id=self.kwargs.get("professional_id")).select_related("profissional")
+        date = self.request.query_params.get("data")
+        if date:
+            queryset = queryset.filter(data__date=date)
+        return queryset
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()

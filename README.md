@@ -14,7 +14,7 @@ Além da API, a aplicação expõe uma página inicial em `/` com identidade vis
 - Django 5
 - Django REST Framework
 - PostgreSQL
-- SQLite (para desenvolvimento local)
+- SQLite (somente para desenvolvimento local)
 - Docker / Docker Compose
 - Poetry
 - GitHub Actions
@@ -50,9 +50,9 @@ Importante: para acessar no navegador, use `http://localhost:8000`, e não `http
 - Documentação Swagger: `http://localhost:8000/api/docs/`
 - Schema OpenAPI: `http://localhost:8000/api/schema/`
 
-A página inicial também possui um painel de teste. Informe a API key no campo indicado e use os botões para consultar profissionais ou consultas diretamente pela interface. Em desenvolvimento, a chave padrão é `lacrei-dev-key`.
+A página inicial também possui um painel de teste. Informe a API key definida no seu arquivo `.env` e use os botões para consultar profissionais ou consultas diretamente pela interface.
 
-Para consultar profissionais pelo navegador, use o Swagger e informe `lacrei-dev-key` em `Authorize`. O endpoint `/api/v1/professionals/` é protegido e não pode ser aberto diretamente como um link comum sem o header de autenticação.
+Para consultar profissionais pelo navegador, use o Swagger e informe o valor de `API_KEY` em `Authorize`. O endpoint `/api/v1/professionals/` é protegido e não pode ser aberto diretamente como um link comum sem o header de autenticação.
 
 ## Autenticação
 
@@ -61,7 +61,7 @@ As rotas de recursos da API exigem autenticação por header `X-API-KEY` ou `Api
 Exemplo:
 
 ```bash
-curl -H "X-API-KEY: lacrei-dev-key" http://localhost:8000/api/v1/professionals/
+curl -H "X-API-KEY: ${API_KEY}" http://localhost:8000/api/v1/professionals/
 ```
 
 ## Endpoints principais
@@ -111,7 +111,7 @@ Criar profissional:
 ```bash
 curl -X POST http://localhost:8000/api/v1/professionals/ \
 	-H "Content-Type: application/json" \
-	-H "X-API-KEY: lacrei-dev-key" \
+	-H "X-API-KEY: ${API_KEY}" \
 	-d '{"nome_social":"João Silva","profissao":"Cardiologista","endereco":"Rua A, 100","contato":"(11) 99999-9999"}'
 ```
 
@@ -120,7 +120,7 @@ Criar consulta:
 ```bash
 curl -X POST http://localhost:8000/api/v1/appointments/ \
 	-H "Content-Type: application/json" \
-	-H "X-API-KEY: lacrei-dev-key" \
+	-H "X-API-KEY: ${API_KEY}" \
 	-d '{"data":"2026-09-20T14:30:00Z","profissional":1}'
 ```
 
@@ -181,7 +181,7 @@ O workflow em `.github/workflows/ci-cd.yml` executa:
 - testes automatizados
 - build da imagem Docker
 
-As etapas de deploy para staging e produção estão preparadas como pontos de integração e ainda usam comandos placeholder. Para ativá-las, é necessário configurar credenciais, registry e infraestrutura do provedor escolhido.
+O workflow publica a imagem versionada por SHA no GitHub Container Registry e faz deploy remoto via SSH em staging e produção. Configure os secrets `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`, `STAGING_DEPLOY_PATH`, `STAGING_URL` e os equivalentes `PRODUCTION_*`. As URLs e respostas de health check são registradas no resumo da execução.
 
 O fluxo de promoção blue/green, health check e rollback por tag está descrito em [docs/rollback.md](docs/rollback.md). A execução manual do workflow também pode ser iniciada pela opção **Run workflow** no GitHub Actions.
 
@@ -189,7 +189,7 @@ O fluxo de promoção blue/green, health check e rollback por tag está descrito
 
 - Django + DRF para construção rápida e segura de APIs REST
 - SQLite como banco local para desenvolvimento e testes
-- PostgreSQL para produção e ambientes com maior exigência de persistência
+- PostgreSQL obrigatório em staging e produção, sem fallback para SQLite
 - autenticação por API key para integrações simples e controladas
 - DRF Spectacular para documentação interativa
 - CORS e logs configurados para observabilidade e integração

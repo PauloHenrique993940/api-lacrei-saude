@@ -9,9 +9,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+
+
+def required_env(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"A variável de ambiente {name} é obrigatória.")
+    return value
+
+
+SECRET_KEY = required_env("SECRET_KEY")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0").split(",")
+ALLOWED_HOSTS = [host.strip() for host in required_env("ALLOWED_HOSTS").split(",") if host.strip()]
+SECURE_ENVIRONMENT = ENVIRONMENT in {"staging", "production"}
+SECURE_SSL_REDIRECT = SECURE_ENVIRONMENT
+SECURE_HSTS_SECONDS = 31536000 if SECURE_ENVIRONMENT else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_ENVIRONMENT
+SECURE_HSTS_PRELOAD = ENVIRONMENT == "production"
+SESSION_COOKIE_SECURE = SECURE_ENVIRONMENT
+CSRF_COOKIE_SECURE = SECURE_ENVIRONMENT
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -58,7 +75,11 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-if os.getenv("USE_SQLITE", "True").lower() == "true":
+use_sqlite = os.getenv("USE_SQLITE", "False").lower() == "true"
+if ENVIRONMENT in {"staging", "production"} and use_sqlite:
+    raise RuntimeError("USE_SQLITE deve ser False em staging e produção.")
+
+if use_sqlite:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -69,11 +90,11 @@ else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "lacrei_saude"),
-            "USER": os.getenv("POSTGRES_USER", "lacrei"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "lacrei123"),
-            "HOST": os.getenv("POSTGRES_HOST", "localhost"),
-            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+            "NAME": required_env("POSTGRES_DB"),
+            "USER": required_env("POSTGRES_USER"),
+            "PASSWORD": required_env("POSTGRES_PASSWORD"),
+            "HOST": required_env("POSTGRES_HOST"),
+            "PORT": required_env("POSTGRES_PORT"),
         }
     }
 
@@ -101,10 +122,10 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
 }
 
-API_KEY = os.getenv("API_KEY", "lacrei-dev-key")
+API_KEY = required_env("API_KEY")
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    for origin in required_env("CORS_ALLOWED_ORIGINS").split(",")
     if origin.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
@@ -138,6 +159,6 @@ SPECTACULAR_SETTINGS = {
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin.strip()
 ]
